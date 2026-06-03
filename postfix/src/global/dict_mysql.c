@@ -1270,22 +1270,21 @@ static int mysql_stmt_bind_value(DICT_MYSQL *dict_mysql, const char *format,
 static int mysql_stmt_bind_values(DICT_MYSQL *dict_mysql, const char *name)
 {
     MYSQL_STATEMENT *sql_stmt = dict_mysql->stmt;
+    static VSTRING *query;
     int     i;
     int     prev;
 
-    if (sql_stmt->param_formats->argc == 0)
-	return (1);
-
     /*
-     * Match the legacy single-warning behaviour for an empty lookup key.
-     * Without this guard, db_common_expand() would emit the same "empty
-     * query string" warning once per placeholder slot.
+     * Bind-time db_common_expand() does the same key preflight from ctx.
+     * Only no-parameter queries need a dummy expansion to preserve legacy
+     * empty-key and partial-key suppression before database work.
      */
-    if (*name == 0) {
-	msg_warn("table \"%s:%s\": empty query string -- ignored",
-		 dict_mysql->dict.type, dict_mysql->dict.name);
-	return (0);
+    if (sql_stmt->param_formats->argc == 0) {
+	INIT_VSTR(query, 10);
+	return (db_common_expand(dict_mysql->ctx, dict_mysql->query,
+				 name, 0, query, (db_quote_callback_t) 0));
     }
+
     for (i = 0; i < sql_stmt->param_formats->argc; i++) {
 	/*
 	 * Repeated %u needs repeated MySQL bind slots, but it can reuse the
@@ -1397,9 +1396,6 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 	    plmysql_down_host(host, dict_mysql->retry_interval);
 	    continue;
 	}
-	status = mysql_stmt_bind_values(dict_mysql, name);
-	if (status == 0)
-	    return (1);
 	status = mysql_stmt_bind(dict_mysql, host->stmt);
 	if (status < 0) {
 	    plmysql_down_host(host, dict_mysql->retry_interval);
@@ -1581,6 +1577,8 @@ static const char *dict_mysql_lookup_prepared(DICT *dict, const char *name)
     int     found;
 
     INIT_VSTR(result, 10);
+    if (!mysql_stmt_bind_values(dict_mysql, name))
+	return (0);
     if (plmysql_query_prepared(dict_mysql, name, result, &found) == 0) {
 	dict->error = DICT_ERR_RETRY;
 	return (0);

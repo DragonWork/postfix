@@ -106,6 +106,7 @@ gen_pair vfilter  "query = SELECT target FROM virtual WHERE local = '%u' AND dom
 domain = example.com"
 gen_pair limit    "query = SELECT target FROM aliases WHERE name = '%s'
 expansion_limit = 1"
+gen_pair constant "query = SELECT target FROM aliases WHERE name = 'postmaster'"
 
 # ----------------------------------------------------------------------
 # Run a test case in both modes and diff the results.
@@ -172,6 +173,7 @@ run_pair domain-filter-skip vfilter   bob@other.com
 run_pair empty-key          virtual   ''
 run_pair expansion-limit    limit     multi
 run_pair domain-parts       bydomain  user@example.com
+run_pair no-placeholder-empty constant ''
 
 echo
 echo "$PASS passed, $FAIL failed."
