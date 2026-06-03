@@ -1386,6 +1386,7 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
     int     num_fields;
     int     i;
     int     status;
+    int     next_res_status;
     int     host_found;
     int     host_expansion;
     int     query_error = 1;
@@ -1549,6 +1550,36 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 	if (metadata)
 	    mysql_free_result(metadata);
 	mysql_stmt_free_result(host->stmt);
+
+	/*
+	 * Stored procedures add a trailing status result. Consume all trailing
+	 * no-data results so that the statement can be executed again.
+	 */
+	next_res_status = -1;
+	while (query_error == 0
+	       && (next_res_status = mysql_stmt_next_result(host->stmt)) == 0) {
+	    metadata = mysql_stmt_result_metadata(host->stmt);
+	    if (metadata != 0) {
+		query_error = 1;
+		msg_warn("%s:%s: prepared query failed: multiple result "
+			 "sets returning data are not supported",
+			 dict_mysql->dict.type, dict_mysql->dict.name);
+		mysql_free_result(metadata);
+	    } else if (mysql_stmt_field_count(host->stmt) != 0) {
+		query_error = 1;
+		msg_warn("%s:%s: prepared query metadata failed: %s",
+			 dict_mysql->dict.type, dict_mysql->dict.name,
+			 mysql_stmt_error(host->stmt));
+	    }
+	    mysql_stmt_free_result(host->stmt);
+	}
+	if (query_error == 0 && next_res_status > 0) {
+	    query_error = 1;
+	    msg_warn("%s:%s: prepared query failed "
+		     "(mysql_stmt_next_result): %s",
+		     dict_mysql->dict.type, dict_mysql->dict.name,
+		     mysql_stmt_error(host->stmt));
+	}
 
 	if (dict_mysql->dict.error) {
 	    event_request_timer(dict_mysql_event, (void *) host,

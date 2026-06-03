@@ -55,6 +55,7 @@ mysql_run() {
 # Build the test schema. Three tables exercise the interesting cases.
 # ----------------------------------------------------------------------
 mysql_run <<'SQL'
+DROP PROCEDURE IF EXISTS alias_proc;
 DROP TABLE IF EXISTS aliases;
 DROP TABLE IF EXISTS virtual;
 DROP TABLE IF EXISTS bydomainpart;
@@ -76,6 +77,13 @@ CREATE TABLE bydomainpart (label1 VARCHAR(64), label2 VARCHAR(64), target VARCHA
 INSERT INTO bydomainpart VALUES
     ('com', 'example', 'example.com served here'),
     ('org', 'example', 'example.org served here');
+
+DELIMITER //
+CREATE PROCEDURE alias_proc(IN p_name VARCHAR(64))
+BEGIN
+    SELECT target FROM aliases WHERE name = p_name;
+END//
+DELIMITER ;
 SQL
 
 # ----------------------------------------------------------------------
@@ -107,6 +115,7 @@ domain = example.com"
 gen_pair limit    "query = SELECT target FROM aliases WHERE name = '%s'
 expansion_limit = 1"
 gen_pair constant "query = SELECT target FROM aliases WHERE name = 'postmaster'"
+gen_pair proc     "query = CALL alias_proc('%s')"
 
 # ----------------------------------------------------------------------
 # Run a test case in both modes and diff the results.
@@ -155,6 +164,40 @@ run_pair() {
     fi
 }
 
+run_pair_stdin() {
+    local label="$1" stem="$2" key1="$3" key2="$4" mode rc
+
+    for mode in legacy prepared; do
+        rc=0
+        printf "%s\n%s\n" "$key1" "$key2" \
+            | "$POSTMAP" -q - "mysql:$CONF/${stem}-${mode}.cf" \
+            > "$OUT/${label}-${mode}.stdout.raw" \
+            2> "$OUT/${label}-${mode}.stderr.raw" \
+            || rc=$?
+        echo "exit=$rc" > "$OUT/${label}-${mode}.exit"
+        normalize < "$OUT/${label}-${mode}.stdout.raw"  > "$OUT/${label}-${mode}.stdout"
+        filter_warnings < "$OUT/${label}-${mode}.stderr.raw" \
+            | normalize > "$OUT/${label}-${mode}.stderr"
+    done
+
+    if diff -q "$OUT/${label}-legacy.stdout" "$OUT/${label}-prepared.stdout" >/dev/null \
+        && diff -q "$OUT/${label}-legacy.stderr" "$OUT/${label}-prepared.stderr" >/dev/null
+    then
+        printf "PASS  %-22s keys=%s,%s -> %s\n" "$label" "$key1" "$key2" \
+            "$(tr '\n' ' ' < "$OUT/${label}-legacy.stdout" | sed 's/ *$//')"
+        PASS=$((PASS+1))
+    else
+        printf "FAIL  %-22s keys=%s,%s\n" "$label" "$key1" "$key2"
+        echo "  ---- stdout diff (legacy vs prepared) ----"
+        diff "$OUT/${label}-legacy.stdout" "$OUT/${label}-prepared.stdout" \
+            | sed 's/^/  /' || true
+        echo "  ---- stderr diff (legacy vs prepared) ----"
+        diff "$OUT/${label}-legacy.stderr" "$OUT/${label}-prepared.stderr" \
+            | sed 's/^/  /' || true
+        FAIL=$((FAIL+1))
+    fi
+}
+
 # ----------------------------------------------------------------------
 # Test cases. See tests/sqlite_prepared/run.sh for the per-case
 # rationale. The null-value case here is the regression covered by the
@@ -174,6 +217,7 @@ run_pair empty-key          virtual   ''
 run_pair expansion-limit    limit     multi
 run_pair domain-parts       bydomain  user@example.com
 run_pair no-placeholder-empty constant ''
+run_pair_stdin procedure-repeat proc postmaster postmaster
 
 echo
 echo "$PASS passed, $FAIL failed."
