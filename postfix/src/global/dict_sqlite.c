@@ -694,21 +694,20 @@ static int sqlite_stmt_bind_value(DICT_SQLITE *dict_sqlite, const char *format,
 static int sqlite_stmt_bind_values(DICT_SQLITE *dict_sqlite, const char *name)
 {
     SQLITE_STATEMENT *stmt = dict_sqlite->stmt;
+    static VSTRING *query;
     int     i;
 
-    if (stmt->param_formats->argc == 0)
-	return (1);
-
     /*
-     * Match the legacy single-warning behaviour for an empty lookup key.
-     * Without this guard, db_common_expand() would emit the same "empty
-     * query string" warning once per placeholder slot.
+     * Bind-time db_common_expand() does the same key preflight from ctx.
+     * Only no-parameter queries need a dummy expansion to preserve legacy
+     * empty-key and partial-key suppression before database work.
      */
-    if (*name == 0) {
-	msg_warn("table \"%s:%s\": empty query string -- ignored",
-		 dict_sqlite->dict.type, dict_sqlite->dict.name);
-	return (0);
+    if (stmt->param_formats->argc == 0) {
+	INIT_VSTR(query, 10);
+	return (db_common_expand(dict_sqlite->ctx, dict_sqlite->query,
+				 name, 0, query, (db_quote_callback_t) 0));
     }
+
     for (i = 0; i < stmt->param_formats->argc; i++) {
 	if (!sqlite_stmt_bind_value(dict_sqlite, stmt->param_formats->argv[i],
 				    name, stmt->param_bufs[i]))
@@ -765,11 +764,11 @@ static const char *dict_sqlite_lookup_prepared(DICT *dict, const char *name)
     int     expansion = 0;
     int     status;
 
+    if (!sqlite_stmt_bind_values(dict_sqlite, name))
+	return (0);
     sqlite_prepare_stmt(dict_sqlite);
     sqlite3_reset(dict_sqlite->stmt->handle);
     sqlite3_clear_bindings(dict_sqlite->stmt->handle);
-    if (!sqlite_stmt_bind_values(dict_sqlite, name))
-	return (0);
     sqlite_stmt_bind(dict_sqlite);
     sql_stmt = dict_sqlite->stmt->handle;
     if (msg_verbose)

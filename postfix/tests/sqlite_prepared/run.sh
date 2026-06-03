@@ -81,6 +81,7 @@ gen_pair vfilter  "query = SELECT target FROM virtual WHERE local = '%u' AND dom
 domain = example.com"
 gen_pair limit    "query = SELECT target FROM aliases WHERE name = '%s'
 expansion_limit = 1"
+gen_pair constant "query = SELECT target FROM aliases WHERE name = 'postmaster'"
 
 # ----------------------------------------------------------------------
 # Run a test case in both modes and diff the results.
@@ -158,6 +159,9 @@ run_pair() {
 #   expansion-limit    multi-row result with expansion_limit = 1: warning
 #                      and DICT_ERR_RETRY in both modes
 #   domain-parts       %1 and %2 substitutions for domain labels
+#   no-placeholder-empty
+#                      empty key with a query that has no placeholders:
+#                      legacy and prepared both suppress the lookup
 # ----------------------------------------------------------------------
 run_pair simple-found       aliases   postmaster
 run_pair simple-not-found   aliases   nonexistent
@@ -170,6 +174,7 @@ run_pair domain-filter-skip vfilter   bob@other.com
 run_pair empty-key          virtual   ''
 run_pair expansion-limit    limit     multi
 run_pair domain-parts       bydomain  user@example.com
+run_pair no-placeholder-empty constant ''
 
 echo
 echo "$PASS passed, $FAIL failed."
