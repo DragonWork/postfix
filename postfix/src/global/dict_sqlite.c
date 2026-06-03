@@ -691,7 +691,7 @@ static int sqlite_stmt_bind_value(DICT_SQLITE *dict_sqlite, const char *format,
 			     (db_quote_callback_t) 0));
 }
 
-static int sqlite_stmt_bind(DICT_SQLITE *dict_sqlite, const char *name)
+static int sqlite_stmt_bind_values(DICT_SQLITE *dict_sqlite, const char *name)
 {
     SQLITE_STATEMENT *stmt = dict_sqlite->stmt;
     int     i;
@@ -709,11 +709,21 @@ static int sqlite_stmt_bind(DICT_SQLITE *dict_sqlite, const char *name)
 		 dict_sqlite->dict.type, dict_sqlite->dict.name);
 	return (0);
     }
-    /* Fill every SQLite bind slot in the same order as sqlite_statement_alloc(). */
     for (i = 0; i < stmt->param_formats->argc; i++) {
 	if (!sqlite_stmt_bind_value(dict_sqlite, stmt->param_formats->argv[i],
 				    name, stmt->param_bufs[i]))
 	    return (0);
+    }
+    return (1);
+}
+
+static int sqlite_stmt_bind(DICT_SQLITE *dict_sqlite)
+{
+    SQLITE_STATEMENT *stmt = dict_sqlite->stmt;
+    int     i;
+
+    /* Fill every SQLite bind slot in the same order as sqlite_statement_alloc(). */
+    for (i = 0; i < stmt->param_formats->argc; i++) {
 	if (sqlite3_bind_text(stmt->handle, i + 1,
 			      vstring_str(stmt->param_bufs[i]),
 			      VSTRING_LEN(stmt->param_bufs[i]),
@@ -758,8 +768,9 @@ static const char *dict_sqlite_lookup_prepared(DICT *dict, const char *name)
     sqlite_prepare_stmt(dict_sqlite);
     sqlite3_reset(dict_sqlite->stmt->handle);
     sqlite3_clear_bindings(dict_sqlite->stmt->handle);
-    if (!sqlite_stmt_bind(dict_sqlite, name))
+    if (!sqlite_stmt_bind_values(dict_sqlite, name))
 	return (0);
+    sqlite_stmt_bind(dict_sqlite);
     sql_stmt = dict_sqlite->stmt->handle;
     if (msg_verbose)
 	msg_info("%s: %s: Searching with prepared query %s",
