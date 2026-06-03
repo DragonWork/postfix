@@ -1364,10 +1364,10 @@ static int plmysql_prepare_stmt(DICT_MYSQL *dict_mysql, HOST *host)
 
 /*
  * plmysql_query_prepared - process a prepared MySQL query.  On success,
- *			append result rows to result and set *found if at
- *			least one row arrived. On failure, log and try other
- *			db instances; on failure of all instances, return 0;
- *			close unnecessary active connections.
+ *			copy the accepted host's rows to result and set *found
+ *			if at least one row arrived. On failure, log and try
+ *			other db instances; on failure of all instances,
+ *			return 0; close unnecessary active connections.
  */
 
 static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
@@ -1382,11 +1382,13 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
     unsigned long column_length;
     char   *dummy;
     char   *column;
+    static VSTRING *host_result;
     int     num_fields;
     int     i;
     int     status;
+    int     host_found;
+    int     host_expansion;
     int     query_error = 1;
-    int     expansion = 0;
 
     *found = 0;
     errno = ENOTSUP;
@@ -1404,6 +1406,9 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 
 	query_error = 0;
 	errno = 0;
+	host_found = 0;
+	host_expansion = 0;
+	INIT_VSTR(host_result, 10);
 	if (mysql_stmt_execute(host->stmt) != 0) {
 	    query_error = 1;
 	    msg_warn("%s:%s: prepared query execute failed: %s",
@@ -1485,7 +1490,7 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 			 mysql_stmt_error(host->stmt));
 		break;
 	    }
-	    *found = 1;
+	    host_found = 1;
 	    for (i = 0; i < num_fields; i++) {
 
 		/*
@@ -1512,9 +1517,9 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 		}
 		column[column_length] = 0;
 		if (db_common_expand(dict_mysql->ctx, dict_mysql->result_format,
-				     column, name, result, 0)
+				     column, name, host_result, 0)
 		    && dict_mysql->expansion_limit > 0
-		    && ++expansion > dict_mysql->expansion_limit) {
+		    && ++host_expansion > dict_mysql->expansion_limit) {
 
 		    /*
 		     * Tag the warning with the user-facing dict_mysql_lookup_prepared
@@ -1559,6 +1564,10 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 		msg_info("%s:%s: successful prepared query result from host %s",
 			 dict_mysql->dict.type, dict_mysql->dict.name,
 			 host->hostname);
+	    VSTRING_RESET(result);
+	    VSTRING_TERMINATE(result);
+	    vstring_strcat(result, vstring_str(host_result));
+	    *found = host_found;
 	    event_request_timer(dict_mysql_event, (void *) host,
 				dict_mysql->idle_interval);
 	    break;
