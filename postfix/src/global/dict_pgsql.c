@@ -929,6 +929,8 @@ static const char *dict_pgsql_lookup_legacy(DICT *dict, const char *name)
 
     for (expansion = i = 0; i < numrows && dict->error == 0; i++) {
 	for (j = 0; j < numcols; j++) {
+	    if (PQgetisnull(query_res, i, j))
+		continue;
 	    r = PQgetvalue(query_res, i, j);
 	    if (db_common_expand(dict_pgsql->ctx, dict_pgsql->result_format,
 				 r, name, result, 0)
@@ -1419,6 +1421,8 @@ static const char *dict_pgsql_lookup_prepared(DICT *dict, const char *name)
 
     for (expansion = i = 0; i < numrows && dict->error == 0; i++) {
 	for (j = 0; j < numcols; j++) {
+	    if (PQgetisnull(query_res, i, j))
+		continue;
 	    r = PQgetvalue(query_res, i, j);
 	    if (db_common_expand(dict_pgsql->ctx, dict_pgsql->result_format,
 				 r, name, result, 0)

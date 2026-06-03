@@ -156,6 +156,32 @@ run_triplet() {
     fi
 }
 
+require_empty_clean() {
+    local label="$1" mode ok=1
+
+    for mode in legacy parameterized prepared; do
+        if [ -s "$OUT/${label}-${mode}.stdout" ] \
+            || [ -s "$OUT/${label}-${mode}.stderr" ]
+        then
+            ok=0
+        fi
+    done
+
+    if [ "$ok" -eq 1 ]; then
+        printf "PASS  %-22s no output and no warning\n" "${label}-clean"
+        PASS=$((PASS+1))
+    else
+        printf "FAIL  %-22s expected no output and no warning\n" "${label}-clean"
+        for mode in legacy parameterized prepared; do
+            echo "  ---- $mode stdout ----"
+            sed 's/^/  /' "$OUT/${label}-${mode}.stdout"
+            echo "  ---- $mode stderr ----"
+            sed 's/^/  /' "$OUT/${label}-${mode}.stderr"
+        done
+        FAIL=$((FAIL+1))
+    fi
+}
+
 # ----------------------------------------------------------------------
 # Test cases (same as sqlite_prepared, plus a third leg for parameterized
 # mode). See tests/sqlite_prepared/run.sh for the per-case rationale.
@@ -163,6 +189,7 @@ run_triplet() {
 run_triplet simple-found       aliases   postmaster
 run_triplet simple-not-found   aliases   nonexistent
 run_triplet null-value         aliases   webmaster
+require_empty_clean null-value
 run_triplet empty-value        aliases   emptyrow
 run_triplet multi-row          aliases   multi
 run_triplet virtual-found      virtual   alice@example.com
