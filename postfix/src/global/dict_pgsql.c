@@ -1235,21 +1235,20 @@ static int pgsql_stmt_bind_value(DICT_PGSQL *dict_pgsql, const char *format,
 static int pgsql_stmt_bind(DICT_PGSQL *dict_pgsql, const char *name)
 {
     PGSQL_STATEMENT *stmt = dict_pgsql->stmt;
+    static VSTRING *query;
     int     i;
 
-    if (stmt->param_formats->argc == 0)
-	return (1);
-
     /*
-     * Match the legacy single-warning behaviour for an empty lookup key.
-     * Without this guard, db_common_expand() would emit the same "empty
-     * query string" warning once per placeholder slot.
+     * Bind-time db_common_expand() does the same key preflight from ctx.
+     * Only no-parameter queries need a dummy expansion to preserve legacy
+     * empty-key and partial-key suppression before database work.
      */
-    if (*name == 0) {
-	msg_warn("table \"%s:%s\": empty query string -- ignored",
-		 dict_pgsql->dict.type, dict_pgsql->dict.name);
-	return (0);
+    if (stmt->param_formats->argc == 0) {
+	INIT_VSTR(query, 10);
+	return (db_common_expand(dict_pgsql->ctx, dict_pgsql->query,
+				 name, 0, query, (db_quote_callback_t) 0));
     }
+
     /* Fill every prepared-statement argument in the slot order from alloc(). */
     for (i = 0; i < stmt->param_formats->argc; i++) {
 	if (!pgsql_stmt_bind_value(dict_pgsql, stmt->param_formats->argv[i],

@@ -97,6 +97,7 @@ gen_triplet vfilter  "query = SELECT target FROM virtual WHERE local = '%u' AND 
 domain = example.com"
 gen_triplet limit    "query = SELECT target FROM aliases WHERE name = '%s'
 expansion_limit = 1"
+gen_triplet constant "query = SELECT target FROM aliases WHERE name = 'postmaster'"
 
 # ----------------------------------------------------------------------
 # Run a test case in all three modes and diff the results pairwise.
@@ -170,6 +171,7 @@ run_triplet domain-filter-skip vfilter   bob@other.com
 run_triplet empty-key          virtual   ''
 run_triplet expansion-limit    limit     multi
 run_triplet domain-parts       bydomain  user@example.com
+run_triplet no-placeholder-empty constant ''
 
 echo
 echo "$PASS passed, $FAIL failed."
