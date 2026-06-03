@@ -1267,11 +1267,9 @@ static int mysql_stmt_bind_value(DICT_MYSQL *dict_mysql, const char *format,
 			     (db_quote_callback_t) 0));
 }
 
-static int mysql_stmt_bind(DICT_MYSQL *dict_mysql, MYSQL_STMT *stmt,
-			           const char *name)
+static int mysql_stmt_bind_values(DICT_MYSQL *dict_mysql, const char *name)
 {
     MYSQL_STATEMENT *sql_stmt = dict_mysql->stmt;
-    VSTRING *param_buf;
     int     i;
     int     prev;
 
@@ -1288,9 +1286,6 @@ static int mysql_stmt_bind(DICT_MYSQL *dict_mysql, MYSQL_STMT *stmt,
 		 dict_mysql->dict.type, dict_mysql->dict.name);
 	return (0);
     }
-    /* Fill every MYSQL_BIND in the same order as the generated '?' markers. */
-    memset(sql_stmt->param_binds, 0,
-	   sql_stmt->param_formats->argc * sizeof(*sql_stmt->param_binds));
     for (i = 0; i < sql_stmt->param_formats->argc; i++) {
 	/*
 	 * Repeated %u needs repeated MySQL bind slots, but it can reuse the
@@ -1305,10 +1300,30 @@ static int mysql_stmt_bind(DICT_MYSQL *dict_mysql, MYSQL_STMT *stmt,
 				       sql_stmt->param_formats->argv[i],
 				       name, sql_stmt->param_bufs[i]))
 		return (0);
-	    param_buf = sql_stmt->param_bufs[i];
-	} else {
-	    param_buf = sql_stmt->param_bufs[prev];
 	}
+    }
+    return (1);
+}
+
+static int mysql_stmt_bind(DICT_MYSQL *dict_mysql, MYSQL_STMT *stmt)
+{
+    MYSQL_STATEMENT *sql_stmt = dict_mysql->stmt;
+    VSTRING *param_buf;
+    int     i;
+    int     prev;
+
+    if (sql_stmt->param_formats->argc == 0)
+	return (1);
+
+    /* Fill every MYSQL_BIND in the same order as the generated '?' markers. */
+    memset(sql_stmt->param_binds, 0,
+	   sql_stmt->param_formats->argc * sizeof(*sql_stmt->param_binds));
+    for (i = 0; i < sql_stmt->param_formats->argc; i++) {
+	for (prev = 0; prev < i; prev++)
+	    if (strcmp(sql_stmt->param_formats->argv[prev],
+		       sql_stmt->param_formats->argv[i]) == 0)
+		break;
+	param_buf = sql_stmt->param_bufs[prev];
 	sql_stmt->param_lengths[i] = VSTRING_LEN(param_buf);
 	sql_stmt->param_binds[i].buffer_type = MYSQL_TYPE_STRING;
 	sql_stmt->param_binds[i].buffer = (char *) vstring_str(param_buf);
@@ -1382,9 +1397,10 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 	    plmysql_down_host(host, dict_mysql->retry_interval);
 	    continue;
 	}
-	status = mysql_stmt_bind(dict_mysql, host->stmt, name);
+	status = mysql_stmt_bind_values(dict_mysql, name);
 	if (status == 0)
 	    return (1);
+	status = mysql_stmt_bind(dict_mysql, host->stmt);
 	if (status < 0) {
 	    plmysql_down_host(host, dict_mysql->retry_interval);
 	    continue;
