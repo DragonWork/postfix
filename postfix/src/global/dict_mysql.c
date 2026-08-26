@@ -1552,6 +1552,14 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 	mysql_stmt_free_result(host->stmt);
 
 	/*
+	 * An expansion-limit error stops result processing, but does not make
+	 * the connection unusable. Clear query_error so that trailing results
+	 * are consumed below. The dictionary error remains for the caller.
+	 */
+	if (dict_mysql->dict.error)
+	    query_error = 0;
+
+	/*
 	 * Stored procedures add a trailing status result. Consume all trailing
 	 * no-data results so that the statement can be executed again.
 	 */
@@ -1582,8 +1590,11 @@ static int plmysql_query_prepared(DICT_MYSQL *dict_mysql, const char *name,
 	}
 
 	if (dict_mysql->dict.error) {
-	    event_request_timer(dict_mysql_event, (void *) host,
-				dict_mysql->idle_interval);
+	    if (query_error)
+		plmysql_down_host(host, dict_mysql->retry_interval);
+	    else
+		event_request_timer(dict_mysql_event, (void *) host,
+				    dict_mysql->idle_interval);
 	    return (1);
 	}
 	if (query_error) {
