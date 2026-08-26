@@ -180,7 +180,8 @@ run_pair_stdin() {
             | normalize > "$OUT/${label}-${mode}.stderr"
     done
 
-    if diff -q "$OUT/${label}-legacy.stdout" "$OUT/${label}-prepared.stdout" >/dev/null \
+    if diff -q "$OUT/${label}-legacy.exit" "$OUT/${label}-prepared.exit" >/dev/null \
+        && diff -q "$OUT/${label}-legacy.stdout" "$OUT/${label}-prepared.stdout" >/dev/null \
         && diff -q "$OUT/${label}-legacy.stderr" "$OUT/${label}-prepared.stderr" >/dev/null
     then
         printf "PASS  %-22s keys=%s,%s -> %s\n" "$label" "$key1" "$key2" \
@@ -188,6 +189,9 @@ run_pair_stdin() {
         PASS=$((PASS+1))
     else
         printf "FAIL  %-22s keys=%s,%s\n" "$label" "$key1" "$key2"
+        echo "  ---- exit status diff (legacy vs prepared) ----"
+        diff "$OUT/${label}-legacy.exit" "$OUT/${label}-prepared.exit" \
+            | sed 's/^/  /' || true
         echo "  ---- stdout diff (legacy vs prepared) ----"
         diff "$OUT/${label}-legacy.stdout" "$OUT/${label}-prepared.stdout" \
             | sed 's/^/  /' || true
